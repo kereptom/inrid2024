@@ -28,8 +28,8 @@ parser = argparse.ArgumentParser(description='INRID2024_Boosting_Image_Demo_INR'
 # Shared Parameters
 parser.add_argument('--input_dir', type=str, default='kodak1', help='Input directory containing images')
 parser.add_argument('--output_dir', type=str, default='output/Boosting_Image_demosaicing_with_INR/', help='Output directory to save results')
-parser.add_argument('--inr_models', nargs='+', default=['gauss', 'relu', 'siren', 'wire', 'ffn', 'incode'], help='List of INR models to use')
-parser.add_argument('--niters_list', nargs='+',  type=int,  default=[2001, 6001, 10001], help='List of number of iterations')
+parser.add_argument('--inr_models', nargs='+', default=['siren', 'incode'], help='List of INR models to use')
+parser.add_argument('--niters_list', nargs='+',  type=int,  default=[2001, 6001, 8001, 10001], help='List of number of iterations')
 parser.add_argument('--resize_fact_list', nargs='+',  type=int, default=[4], help='List of resize factors')
 
 parser.add_argument('--lr_gauss', type=float, default=1e-4, help='Learning rate')
@@ -51,7 +51,7 @@ parser.add_argument('--b_coef', type=float, default=0.0196, help='b coefficient'
 parser.add_argument('--c_coef', type=float, default=0.0588, help='c coefficient')
 parser.add_argument('--d_coef', type=float, default=0.0269, help='d coefficient')
 
-parser.add_argument('--alpha_list', nargs='+', type=float, default=[0.1,1,10,40,60,100,200,500,1000], help='Weighting Bayer loss')
+parser.add_argument('--alpha_list', nargs='+', type=float, default=[0.1,1,60,100,1000], help='Weighting Bayer loss')
 parser.add_argument('--beta', type=float, default=1, help='Weighting Demo loss')
 parser.add_argument('--demo_method_list', nargs='+', type=str, default=['Nearest','Bilinear', 'Malvar', 'Menon'], help='Demosaicing method')
 args = parser.parse_args()
