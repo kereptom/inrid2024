@@ -23,7 +23,7 @@ from PIL import Image
 
 
 # Initialize parser
-parser = argparse.ArgumentParser(description='INRID2024')
+parser = argparse.ArgumentParser(description='INRID2024_Boosting_Image_Demo_INR')
 
 # Shared Parameters
 parser.add_argument('--input_dir', type=str, default='kodak1', help='Input directory containing images')
@@ -31,7 +31,7 @@ parser.add_argument('--output_dir', type=str, default='output/Boosting_Image_dem
 parser.add_argument('--inr_models', nargs='+', default=['gauss', 'relu', 'siren', 'wire', 'ffn', 'incode'], help='List of INR models to use')
 parser.add_argument('--niters_list', nargs='+',  type=int,  default=[2001, 6001, 10001], help='List of number of iterations')
 parser.add_argument('--resize_fact_list', nargs='+',  type=int, default=[4], help='List of resize factors')
-# Learning rate is multiplied by resize_factor
+
 parser.add_argument('--lr_gauss', type=float, default=1e-4, help='Learning rate')
 parser.add_argument('--lr_relu', type=float, default=1e-4, help='Learning rate')
 parser.add_argument('--lr_siren', type=float, default=1e-4, help='Learning rate')
@@ -237,8 +237,6 @@ for alpha in args.alpha_list:
                                     scheduler.step()
                                 else:
                                     scheduler.step()
-
-                            imrec = rec[0, ...].reshape(H, W, 3).detach().cpu().numpy()
 
                             if (mse_array[step] < best_loss) or (step == 0):
                                 best_loss = mse_array[step]
