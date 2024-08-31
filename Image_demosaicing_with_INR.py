@@ -18,7 +18,7 @@ parser = argparse.ArgumentParser(description='INRID2024')
 
 # Shared Parameters
 parser.add_argument('--input_dir', type=str, default='kodak1', help='Input directory containing images')
-parser.add_argument('--output_dir', type=str, default='output/Image_representation_with_INR/', help='Output directory to save results')
+parser.add_argument('--output_dir', type=str, default='output/Image_demosaicing_with_INR/', help='Output directory to save results')
 parser.add_argument('--inr_models', nargs='+', default=['gauss', 'relu', 'siren', 'wire', 'ffn', 'incode'], help='List of INR models to use')
 parser.add_argument('--niters_list', nargs='+',  type=int,  default=[501, 1001, 2001], help='List of number of iterations')
 parser.add_argument('--resize_fact_list', nargs='+',  type=int, default=[1, 2, 4], help='List of resize factors')
@@ -60,6 +60,7 @@ for niters in args.niters_list:
             im = cv2.resize(im, None, fx=1 / resize_fact, fy=1 / resize_fact, interpolation=cv2.INTER_AREA)
             H, W, _ = im.shape
             base_name = os.path.basename(image_path).split('.')[0]
+            bayer_mask = create_bayer_mask(H, W, device)
 
             for inr_model in args.inr_models:
                 pos_encode_gaus = {'type': 'gaussian', 'scale_B': 10, 'mapping_input': args.hidden_features}
@@ -128,8 +129,7 @@ for niters in args.niters_list:
                                             pos_encode_configs=pos_encode_gaus,
                                             ).to(device)
                                             
-                # For smaller images higher
-                args.lr = args.lr * resize_fact                            
+                         
 
                 if inr_model == 'wire':
                     wire_lr = args.lr * min(1, args.maxpoints / (H * W))
@@ -146,6 +146,7 @@ for niters in args.niters_list:
 
                 coords = utils.get_coords(H, W, dim=2)[None, ...]
                 gt = torch.tensor(im).reshape(H * W, 3)[None, ...].to(device)
+                gt_bayer = gt * bayer_mask
                 rec = torch.zeros_like(gt)
 
                 for step in tqdm(range(niters)):
@@ -163,7 +164,8 @@ for niters in args.niters_list:
                         with torch.no_grad():
                             rec[:, b_indices, :] = model_output
 
-                        output_loss = ((model_output - gt[:, b_indices, :]) ** 2).mean()
+                        model_output_bayer = model_output * bayer_mask[:, b_indices, :]
+                        output_loss = ((model_output_bayer - gt_bayer[:, b_indices, :]) ** 2).mean()
 
                         if inr_model == 'incode':
                             a_coef, b_coef, c_coef, d_coef = coef[0]
@@ -264,12 +266,4 @@ with open(setup_txt_path, 'w') as f:
         f.write(f'{arg}: {getattr(args, arg)}\n')
 
 print('Setup parameters saved to:', setup_txt_path)
-
-#### These are not general rates, yet might be useful for kodak size 192x128:
-#parser.add_argument('--lr_gauss', type=float, default=4e-4, help='Learning rate')
-#parser.add_argument('--lr_relu', type=float, default=3e-3, help='Learning rate')
-#parser.add_argument('--lr_siren', type=float, default=6e-4, help='Learning rate')
-#parser.add_argument('--lr_wire', type=float, default=7e-4, help='Learning rate')
-#parser.add_argument('--lr_ffn', type=float, default=2e-3, help='Learning rate')
-#parser.add_argument('--lr_incode', type=float, default=1e-4, help='Learning rate')
 
