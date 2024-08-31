@@ -18,14 +18,21 @@ from myutils import *
 parser = argparse.ArgumentParser(description='INRID2024')
 
 # Shared Parameters
-parser.add_argument('--input_dir', type=str, default='kodak', help='Input directory containing images')
+parser.add_argument('--input_dir', type=str, default='kodak1', help='Input directory containing images')
 parser.add_argument('--output_dir', type=str, default='output/Image_representation_with_INR/', help='Output directory to save results')
 parser.add_argument('--inr_models', nargs='+', default=['gauss', 'relu', 'siren', 'wire', 'ffn', 'incode'], help='List of INR models to use')
-parser.add_argument('--niters_list', nargs='+', default=[501, 1001, 2001], help='List of number of iterations')
-parser.add_argument('--resize_fact_list', nargs='+', default=[1, 2, 4], help='List of resize factors')
-parser.add_argument('--lr', type=float, default=1e-4, help='Learning rate')
-parser.add_argument('--hidden_layers', type=float, default=5, help='Number of hidden layers')
-parser.add_argument('--hidden_features', type=float, default=256, help='Number of hidden features')
+parser.add_argument('--niters_list', nargs='+',  type=int,  default=[501, 1001, 2001], help='List of number of iterations')
+parser.add_argument('--resize_fact_list', nargs='+',  type=int, default=[1, 2, 4], help='List of resize factors')
+# Learning rate is multiplied by resize_factor
+parser.add_argument('--lr_gauss', type=float, default=1e-4, help='Learning rate')
+parser.add_argument('--lr_relu', type=float, default=1e-4, help='Learning rate')
+parser.add_argument('--lr_siren', type=float, default=1e-4, help='Learning rate')
+parser.add_argument('--lr_wire', type=float, default=1e-4, help='Learning rate')
+parser.add_argument('--lr_ffn', type=float, default=1e-4, help='Learning rate')
+parser.add_argument('--lr_incode', type=float, default=1e-4, help='Learning rate')
+
+parser.add_argument('--hidden_layers', type=int, default=5, help='Number of hidden layers')
+parser.add_argument('--hidden_features', type=int, default=256, help='Number of hidden features')
 parser.add_argument('--using_schedular', type=bool, default=True, help='Whether to use scheduler')
 parser.add_argument('--scheduler_b', type=float, default=0.1, help='Learning rate scheduler')
 parser.add_argument('--maxpoints', type=int, default=128 * 128, help='Batch size')
@@ -35,12 +42,12 @@ parser.add_argument('--a_coef', type=float, default=0.1993, help='a coefficient'
 parser.add_argument('--b_coef', type=float, default=0.0196, help='b coefficient')
 parser.add_argument('--c_coef', type=float, default=0.0588, help='c coefficient')
 parser.add_argument('--d_coef', type=float, default=0.0269, help='d coefficient')
-args = parser.parse_args(args=[])
+args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 image_paths = [os.path.join('dat/'+args.input_dir, f) for f in os.listdir('dat/'+args.input_dir) if f.endswith('.png') or f.endswith('.tif')]
 psnr_results = {}
-ensure_dir(os.path.join(args.output_dir, args.input_dir))
+ensure_dir(os.path.join(args.output_dir, args.input_dir, f'm_{len(args.inr_models)}_n{len(args.niters_list)}_r{len(args.resize_fact_list)}'))
 
 for niters in args.niters_list:
     psnr_results[niters] = {}
@@ -60,6 +67,7 @@ for niters in args.niters_list:
                 pos_encode_no = {'type': None}
 
                 if inr_model == 'incode':
+                    args.lr = args.lr_incode 
                     MLP_configs = {'task': 'image',
                                    'model': 'resnet34',
                                    'truncated_layer': 5,
@@ -80,6 +88,7 @@ for niters in args.niters_list:
                                                MLP_configs=MLP_configs
                                                ).to(device)
                 elif inr_model == 'siren':
+                    args.lr = args.lr_siren 
                     model = INR(inr_model).run(in_features=2,
                                                out_features=3,
                                                hidden_features=args.hidden_features,
@@ -88,13 +97,23 @@ for niters in args.niters_list:
                                                hidden_omega_0=30.0
                                                ).to(device)
                 elif inr_model == 'wire':
+                    args.lr = args.lr_wire 
                     model = INR(inr_model).run(in_features=2,
                                                out_features=3,
                                                hidden_features=args.hidden_features,
                                                hidden_layers=args.hidden_layers,
-                                               first_omega_0=30, hidden_omega_0=0, sigma=10.0,
+                                               first_omega_0=30, hidden_omega_0=10, sigma=10.0,
                                                ).to(device)
-                elif inr_model == 'relu' or inr_model == 'gauss':
+                elif inr_model == 'relu':
+                    args.lr = args.lr_relu 
+                    model = INR(inr_model).run(in_features=2,
+                                               out_features=3,
+                                               hidden_features=args.hidden_features,
+                                               hidden_layers=args.hidden_layers,
+                                               pos_encode_configs=pos_encode_no,
+                                               ).to(device)
+                elif inr_model == 'gauss':
+                    args.lr = args.lr_gauss 
                     model = INR(inr_model).run(in_features=2,
                                                out_features=3,
                                                hidden_features=args.hidden_features,
@@ -102,19 +121,25 @@ for niters in args.niters_list:
                                                pos_encode_configs=pos_encode_no,
                                                ).to(device)
                 elif inr_model == 'ffn':
+                    args.lr = args.lr_ffn 
                     model = INR('relu').run(in_features=2,
                                             out_features=3,
                                             hidden_features=args.hidden_features,
                                             hidden_layers=args.hidden_layers,
                                             pos_encode_configs=pos_encode_gaus,
                                             ).to(device)
+                                            
+                # For smaller images higher
+                args.lr = args.lr * resize_fact                            
 
                 if inr_model == 'wire':
                     wire_lr = args.lr * min(1, args.maxpoints / (H * W))
                     optim = torch.optim.Adam(lr=wire_lr, params=model.parameters())
                 else:
                     optim = torch.optim.Adam(lr=args.lr, params=model.parameters())
-                scheduler = lr_scheduler.LambdaLR(optim, lambda x: args.scheduler_b ** min(x / niters, 1))
+                scheduler = lr_scheduler.LambdaLR(optim, lambda x: args.scheduler_b ** min(x / niters, 1))  
+                
+                
 
                 psnr_values = []
                 mse_array = torch.zeros(niters, device=device)
@@ -174,7 +199,7 @@ for niters in args.niters_list:
                         best_img = (best_img - best_img.min()) / (best_img.max() - best_img.min())
 
                 # Save best image
-                output_img_dir = os.path.join(args.output_dir, args.input_dir, f'niters_{niters}', f'resize_{resize_fact}', base_name,
+                output_img_dir = os.path.join(args.output_dir, args.input_dir,f'm_{len(args.inr_models)}_n{len(args.niters_list)}_r{len(args.resize_fact_list)}', f'niters_{niters}', f'resize_{resize_fact}', base_name,
                                               inr_model)
                 ensure_dir(output_img_dir)
                 plt.imsave(os.path.join(output_img_dir, f'best_{base_name}_{inr_model}.png'), best_img)
@@ -185,7 +210,7 @@ for niters in args.niters_list:
                 print(f'{image_path} with {inr_model} - Max PSNR: {best_psnr:.4f}')
 
 # Save PSNR results
-output_txt_path = os.path.join(args.output_dir, args.input_dir, 'psnr_results.txt')
+output_txt_path = os.path.join(args.output_dir, args.input_dir, f'm_{len(args.inr_models)}_n{len(args.niters_list)}_r{len(args.resize_fact_list)}', 'psnr_results.txt')
 with open(output_txt_path, 'w') as f:
     header = 'Niters\tResize_Factor\tImage\tINR_Model\tPSNR\n'
     f.write(header)
@@ -202,7 +227,7 @@ print('PSNR results saved to:', output_txt_path)
 
 # Calculate and save average PSNR results
 average_psnr_results = {}
-output_avg_txt_path = os.path.join(args.output_dir, args.input_dir, 'psnr_average_results.txt')
+output_avg_txt_path = os.path.join(args.output_dir, args.input_dir,f'm_{len(args.inr_models)}_n{len(args.niters_list)}_r{len(args.resize_fact_list)}',  'psnr_average_results.txt')
 
 for niters, resize_dict in psnr_results.items():
     average_psnr_results[niters] = {}
@@ -228,4 +253,24 @@ with open(output_avg_txt_path, 'w') as f:
                 f.write(avg_psnr_line)
 
 print('Average PSNR results saved to:', output_avg_txt_path)
+
+# Save all actual argument parameters to setup.txt
+setup_txt_path = os.path.join(args.output_dir, args.input_dir, f'm_{len(args.inr_models)}_n{len(args.niters_list)}_r{len(args.resize_fact_list)}', 'setup.txt')
+
+# Ensure the output directory exists
+ensure_dir(os.path.dirname(setup_txt_path))
+
+with open(setup_txt_path, 'w') as f:
+    for arg in vars(args):
+        f.write(f'{arg}: {getattr(args, arg)}\n')
+
+print('Setup parameters saved to:', setup_txt_path)
+
+#### These are not general rates, yet might be useful for kodak size 192x128:
+#parser.add_argument('--lr_gauss', type=float, default=4e-4, help='Learning rate')
+#parser.add_argument('--lr_relu', type=float, default=3e-3, help='Learning rate')
+#parser.add_argument('--lr_siren', type=float, default=6e-4, help='Learning rate')
+#parser.add_argument('--lr_wire', type=float, default=7e-4, help='Learning rate')
+#parser.add_argument('--lr_ffn', type=float, default=2e-3, help='Learning rate')
+#parser.add_argument('--lr_incode', type=float, default=1e-4, help='Learning rate')
 
