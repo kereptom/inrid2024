@@ -6,9 +6,47 @@ import numpy as np
 from models.network_dm import RSTCANet as net
 import torch.nn.functional as F
 
+from models.residual_model_resdnet import *
+from models.MMNet_TBPTT import *
+
 
 import os
 import torch
+
+
+def initialize_deepdemosaick_model():
+    model_path = 'models/deepdemosaick_models/bayer_noisy/'
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')     
+    model_params = torch.load(model_path+'model_best.pth')
+    model = ResNet_Den(BasicBlock1, model_params[2], weightnorm=True)
+    mmnet = MMNet(model, max_iter=model_params[1])
+    for param in mmnet.parameters():
+        param.requires_grad = False
+    mmnet.load_state_dict(model_params[0])
+    mmnet = mmnet.to(device)
+    return mmnet
+
+def deep_demosaic(patch, mmnet, device):
+    with torch.no_grad():
+        mmnet.eval()
+        mosaic = torch.FloatTensor(patch).float()[None]
+        # padding in order to ensure no boundary artifacts
+        mosaic = F.pad(mosaic[:,None],(8,8,8,8),'reflect')[:,0]
+        shape = mosaic[0].shape
+        mask = generate_mask(shape, pattern='RGGB')
+        M = torch.FloatTensor(mask)[None]
+        mosaic = mosaic[...,None]*M
+
+        mosaic = mosaic.permute(0,3,1,2)
+        M = M.permute(0,3,1,2)
+
+        p = Demosaic(mosaic.float(), M.float())
+        if device.type == 'cuda':
+            p.cuda_()
+        xcur = mmnet.forward_all_iter(p, max_iter=mmnet.max_iter, init=True, noise_estimation=True)
+
+        return (xcur[0].cpu().data.permute(1,2,0).numpy()[8:-8,8:-8] ) / 255.0
+
 
 # Define the function to initialize the RSTCANet model
 def initialize_rstcanet_model():
@@ -224,6 +262,8 @@ def rstcanet_demosaic(raw_slice, model, device):
     if img_output.ndim == 3:
         img_output = np.transpose(img_output, (1, 2, 0))
     return img_output
+    
+    
 
 # Function to apply Gaussian or uniform blur in PyTorch
 def apply_blur_torch(image, blur_type, kernel_size):
@@ -246,4 +286,4 @@ def apply_blur_torch(image, blur_type, kernel_size):
         raise ValueError("Unsupported blur type")
     
     return image
-    
+

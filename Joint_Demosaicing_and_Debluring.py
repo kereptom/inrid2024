@@ -66,10 +66,11 @@ psnr_results = {}
 ssim_results = {}
 
 model_rstcanet = initialize_rstcanet_model()
-
+model_deepdemosaick = initialize_deepdemosaick_model()
 
 demosaic_methods = {
     'RSTCANET': rstcanet_demosaic,
+    'Deepdemosaick': deep_demosaic,
     'Malvar': demosaicing_CFA_Bayer_Malvar2004,
     'Menon': demosaicing_CFA_Bayer_Menon2007
 }
@@ -113,13 +114,18 @@ for blur_type in args.blur_list:
                                 bayer_mask = create_bayer_mask(H, W, device)
                                 compl_bayer_mask = create_complementary_bayer_mask(H, W, device)
                                 
-                                im_blured = apply_blur_torch(torch.tensor(im).permute(2, 0, 1).unsqueeze(0), blur_type, kernel_size=kernel_size).squeeze(0).permute(1, 2, 0).numpy()
+                                if blur_type =='none':
+                                    im_blured = im
+                                else:
+                                    im_blured = apply_blur_torch(torch.tensor(im).permute(2, 0, 1).unsqueeze(0), blur_type, kernel_size=kernel_size).squeeze(0).permute(1, 2, 0).numpy()
                                 im_noised = add_noise_power(im_blured, noise_snr).astype(np.float32)
 
                                 im_bayer2 = rgb2RGGB(im_noised)
                                 
                                 if demo_method == 'RSTCANET':
                                     demo_orig = demosaic_methods[demo_method](im_bayer2, model_rstcanet, device)
+                                elif demo_method =='Deepdemosaick':
+                                    demo_orig = demosaic_methods[demo_method](im_bayer2*255, model_deepdemosaick, device)
                                 else:
                                     demo_orig = demosaic_methods[demo_method](im_bayer2, 'RGGB')
 
@@ -227,7 +233,10 @@ for blur_type in args.blur_list:
                                                 rec[:, b_indices, :] = model_output
                                             
                                             model_output_reshaped = model_output.permute(0, 2, 1).view(1, 3, H, W)
-                                            model_output_blurred = apply_blur_torch(model_output_reshaped, blur_type, kernel_size=kernel_size)
+                                            if blur_type =='none':
+                                                model_output_blurred = model_output_reshaped
+                                            else:
+                                                model_output_blurred = apply_blur_torch(model_output_reshaped, blur_type, kernel_size=kernel_size)
                                             model_output_blurred = model_output_blurred.view(1, 3, -1).permute(0, 2, 1)
                                             
                                             model_output_bayer = model_output_blurred * bayer_mask[:, b_indices, :]
@@ -428,7 +437,10 @@ with open(output_baseline_txt_path, 'w') as baseline_file:
                             base_name = os.path.basename(image_path).split('.')[0]
 
                             # Add blur and noise to the image
-                            im_blurred = apply_blur_torch(torch.tensor(im).permute(2, 0, 1).unsqueeze(0), blur_type, kernel_size=kernel_size).squeeze(0).permute(1, 2, 0).numpy()
+                            if blur_type =='none':
+                                im_blurred = im
+                            else:
+                                im_blurred = apply_blur_torch(torch.tensor(im).permute(2, 0, 1).unsqueeze(0), blur_type, kernel_size=kernel_size).squeeze(0).permute(1, 2, 0).numpy()
                             im_noised = add_noise_power(im_blurred, noise_snr).astype(np.float32)
 
                             # Generate the Bayer pattern
@@ -436,6 +448,8 @@ with open(output_baseline_txt_path, 'w') as baseline_file:
                             
                             if demo_method == 'RSTCANET':
                                 demo_orig = demosaic_methods[demo_method](im_bayer2, model_rstcanet, device)
+                            elif demo_method =='Deepdemosaick':
+                                demo_orig = demosaic_methods[demo_method](im_bayer2*255, model_deepdemosaick, device)
                             else:
                                 demo_orig = demosaic_methods[demo_method](im_bayer2, 'RGGB')
 
