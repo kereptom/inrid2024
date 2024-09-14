@@ -23,11 +23,11 @@ from PIL import Image
 
 
 # Initialize parser
-parser = argparse.ArgumentParser(description='INRID2024_Boosting_Image_Demo_INR')
+parser = argparse.ArgumentParser(description='INRID2024_Boosting_Image_Demo_INR_RSTCANet')
 
 # Shared Parameters
 parser.add_argument('--input_dir', type=str, default='kodak1', help='Input directory containing images')
-parser.add_argument('--output_dir', type=str, default='output/Boosting_Image_demosaicing_with_INR/', help='Output directory to save results')
+parser.add_argument('--output_dir', type=str, default='output/Boosting_Image_demosaicing_with_INR_RSTCANet/', help='Output directory to save results')
 parser.add_argument('--inr_models', nargs='+', default=['siren', 'incode'], help='List of INR models to use')
 parser.add_argument('--niters_list', nargs='+',  type=int,  default=[2001, 6001, 8001, 10001], help='List of number of iterations')
 parser.add_argument('--resize_fact_list', nargs='+',  type=int, default=[4], help='List of resize factors')
@@ -53,7 +53,7 @@ parser.add_argument('--d_coef', type=float, default=0.0269, help='d coefficient'
 
 parser.add_argument('--alpha_list', nargs='+', type=float, default=[0.1,1,60,100,1000], help='Weighting Bayer loss')
 parser.add_argument('--beta', type=float, default=1, help='Weighting Demo loss')
-parser.add_argument('--demo_method_list', nargs='+', type=str, default=['Nearest','Bilinear', 'Malvar', 'Menon'], help='Demosaicing method')
+parser.add_argument('--demo_method_list', nargs='+', type=str, default=['RSTCANET'], help='Demosaicing method')
 args = parser.parse_args()
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -61,11 +61,10 @@ image_paths = [os.path.join('dat/'+args.input_dir, f) for f in os.listdir('dat/'
 psnr_results = {}
 ssim_results = {}
 
+model_rstcanet = initialize_rstcanet_model()
+
 demosaic_methods = {
-    'Nearest': nearest_neighbor_demosaic,
-    'Bilinear': demosaicing_CFA_Bayer_bilinear,
-    'Malvar': demosaicing_CFA_Bayer_Malvar2004,
-    'Menon': demosaicing_CFA_Bayer_Menon2007
+    'RSTCANET': rstcanet_demosaic
 }
 
 for alpha in args.alpha_list:
@@ -92,11 +91,24 @@ for alpha in args.alpha_list:
                     im = utils.normalize(plt.imread(image_path).astype(np.float32), True)
                     im = cv2.resize(im, None, fx=1 / resize_fact, fy=1 / resize_fact, interpolation=cv2.INTER_AREA)
                     H, W, _ = im.shape
+                    
+                    if demo_method == 'RSTCANET':
+                        new_H = (H // 16) * 16
+                        new_W = (W // 16) * 16
+
+                        im = im[:new_H, :new_W, :]
+                        H, W, _ = im.shape
+                        print(f"{image_path}: Original shape: {H}x{W}, New shape: {new_H}x{new_W} for RSTCANet")
+
                     base_name = os.path.basename(image_path).split('.')[0]
                     bayer_mask = create_bayer_mask(H, W, device)
                     compl_bayer_mask = create_complementary_bayer_mask(H, W, device)
                     im_bayer2 = rgb2RGGB(im)
-                    demo_orig = demosaic_methods[demo_method](im_bayer2, 'RGGB')
+                    
+                    if demo_method == 'RSTCANET':
+                        demo_orig = demosaic_methods[demo_method](im_bayer2, model_rstcanet, device)
+                    else:
+                        demo_orig = demosaic_methods[demo_method](im_bayer2, 'RGGB')
 
                     for inr_model in args.inr_models:
                         pos_encode_gaus = {'type': 'gaussian', 'scale_B': 10, 'mapping_input': args.hidden_features}
@@ -371,9 +383,22 @@ with open(output_baseline_txt_path, 'w') as baseline_file:
                 # Load the image and perform necessary preprocessing
                 im = utils.normalize(plt.imread(image_path).astype(np.float32), True)
                 im_resized = cv2.resize(im, None, fx=1 / resize_fact, fy=1 / resize_fact, interpolation=cv2.INTER_AREA)
+                
+                H, W, _ = im_resized.shape
+                if demo_method == 'RSTCANET':
+                        new_H = (H // 16) * 16
+                        new_W = (W // 16) * 16
+
+                        im_resized = im_resized[:new_H, :new_W, :]
+                        H, W, _ = im_resized.shape
+                
                 base_name = os.path.basename(image_path).split('.')[0]
                 im_bayer2 = rgb2RGGB(im_resized)
-                demo_orig = demosaic_methods[demo_method](im_bayer2, 'RGGB')
+                
+                if demo_method == 'RSTCANET':
+                    demo_orig = demosaic_methods[demo_method](im_bayer2, model_rstcanet, device)
+                else:
+                    demo_orig = demosaic_methods[demo_method](im_bayer2, 'RGGB')
 
                 # Calculate PSNR and SSIM between original image and demosaiced image
                 dmpsnr = calculate_psnr(im_resized * 255, demo_orig * 255)

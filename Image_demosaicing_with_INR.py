@@ -26,7 +26,7 @@ parser.add_argument('--resize_fact_list', nargs='+',  type=int, default=[1, 2, 4
 parser.add_argument('--lr_gauss', type=float, default=1e-4, help='Learning rate')
 parser.add_argument('--lr_relu', type=float, default=1e-4, help='Learning rate')
 parser.add_argument('--lr_siren', type=float, default=1e-4, help='Learning rate')
-parser.add_argument('--lr_wire', type=float, default=1e-4, help='Learning rate')
+parser.add_argument('--lr_wire', type=float, default=7e-4, help='Learning rate')
 parser.add_argument('--lr_ffn', type=float, default=1e-4, help='Learning rate')
 parser.add_argument('--lr_incode', type=float, default=1e-4, help='Learning rate')
 
@@ -131,11 +131,7 @@ for niters in args.niters_list:
                                             
                          
 
-                if inr_model == 'wire':
-                    wire_lr = args.lr * min(1, args.maxpoints / (H * W))
-                    optim = torch.optim.Adam(lr=wire_lr, params=model.parameters())
-                else:
-                    optim = torch.optim.Adam(lr=args.lr, params=model.parameters())
+                optim = torch.optim.Adam(lr=args.lr, params=model.parameters())
                 scheduler = lr_scheduler.LambdaLR(optim, lambda x: args.scheduler_b ** min(x / niters, 1))  
                 
                 

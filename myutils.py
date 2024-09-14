@@ -3,6 +3,66 @@ import torch
 import cv2
 import math
 import numpy as np
+from models.network_dm import RSTCANet as net
+import torch.nn.functional as F
+
+
+import os
+import torch
+
+# Define the function to initialize the RSTCANet model
+def initialize_rstcanet_model():
+    # Args_rst class definition inside the function
+    class Args_rst:
+        def __init__(self):
+            self.model_name = 'RSTCANet_L'
+            self.task_current = 'models/rstcanet_models'
+            self.n_channels = 3
+            self.nc = 128
+            self.window_size = 8
+            self.num_heads = 8
+            self.N = 8
+            self.K = 4
+            self.patch_size = 2
+
+    # Create an instance of Args_rst
+    args_rst = Args_rst()
+
+    # Prepare parameters for the model
+    num_heads = [args_rst.num_heads for _ in range(args_rst.K)]
+    depths = [args_rst.N for _ in range(args_rst.K)]
+    model_path = os.path.join(args_rst.task_current, args_rst.model_name + '.pth')
+    
+    # Determine the device (CUDA or CPU)
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    
+    # Initialize the RSTCANet model (assuming `net` is defined elsewhere in your code)
+    model_rstcanet = net(
+        in_nc=1, 
+        out_nc=args_rst.n_channels, 
+        patch_size=args_rst.patch_size, 
+        nc=args_rst.nc, 
+        window_size=args_rst.window_size, 
+        num_heads=num_heads, 
+        depths=depths
+    )
+    
+    # Load pre-trained weights
+    model_rstcanet.load_state_dict(torch.load(model_path), strict=True)
+    
+    # Set the model to evaluation mode
+    model_rstcanet.eval()
+    
+    # Disable gradients for the model parameters
+    for k, v in model_rstcanet.named_parameters():
+        v.requires_grad = False
+    
+    # Move the model to the appropriate device
+    model_rstcanet = model_rstcanet.to(device)
+
+    # Return the initialized model
+    return model_rstcanet
+
 
 def ensure_dir(path):
     if not os.path.exists(path):
@@ -131,3 +191,59 @@ def calculate_ssim(img1, img2, border=0):
             return ssim(np.squeeze(img1), np.squeeze(img2))
     else:
         raise ValueError('Wrong input image dimensions.')
+        
+
+def add_noise_power(image, snr_db):
+    snr_linear = 10 ** (snr_db / 10)  # Convert SNR from dB to linear (power version)
+    signal_power = np.mean(image ** 2)  # Calculate the power of the signal
+    noise_power = signal_power / snr_linear  # Calculate the power of the noise
+    noise_std = np.sqrt(noise_power)  # Noise standard deviation is the square root of power
+    noise = np.random.normal(scale=noise_std, size=image.shape)  # Generate Gaussian noise
+    noisy_image = image + noise  # Add the noise to the signal
+    noisy_image = np.clip(noisy_image, 0, 1)  # Clip values to ensure the image range stays valid
+    return noisy_image
+
+# Function to add noise to an image
+def add_noise_amplitude(image, snr_db):
+    snr_linear = 10 ** (snr_db / 20)
+    signal_std = np.std(image)
+    noise_std = signal_std / snr_linear
+    noise = np.random.normal(scale=noise_std, size=image.shape)
+    noisy_image = image + noise
+    noisy_image = np.clip(noisy_image, 0, 1)
+    return noisy_image
+
+
+
+def rstcanet_demosaic(raw_slice, model, device):
+    img_input = np.expand_dims(raw_slice, axis=-1)
+    img_input_tensor = torch.from_numpy(np.ascontiguousarray(img_input)).permute(2, 0, 1).float().unsqueeze(0)
+    img_input_tensor = img_input_tensor.to(device)
+    img_output = model(img_input_tensor)
+    img_output = img_output.data.squeeze().float().clamp_(0.0, 1.0).cpu().numpy()
+    if img_output.ndim == 3:
+        img_output = np.transpose(img_output, (1, 2, 0))
+    return img_output
+
+# Function to apply Gaussian or uniform blur in PyTorch
+def apply_blur_torch(image, blur_type, kernel_size):
+    padding = kernel_size // 2
+    if blur_type == 'gaussian':
+        sigma = kernel_size / 3
+        x = torch.arange(-padding, padding + 1, device=image.device, dtype=image.dtype)
+        gaussian_kernel = torch.exp(-0.5 * (x / sigma)**2)
+        gaussian_kernel = gaussian_kernel / gaussian_kernel.sum()
+        gaussian_kernel = gaussian_kernel.view(1, 1, -1) * gaussian_kernel.view(1, -1, 1)
+        gaussian_kernel = gaussian_kernel.expand(image.shape[1], 1, kernel_size, kernel_size)
+
+        image = F.pad(image, (padding, padding, padding, padding), mode='reflect')
+        image = F.conv2d(image, gaussian_kernel, groups=image.shape[1])
+    elif blur_type == 'uniform':
+        uniform_kernel = torch.ones((image.shape[1], 1, kernel_size, kernel_size), device=image.device, dtype=image.dtype) / (kernel_size ** 2)
+        image = F.pad(image, (padding, padding, padding, padding), mode='reflect')
+        image = F.conv2d(image, uniform_kernel, groups=image.shape[1])
+    else:
+        raise ValueError("Unsupported blur type")
+    
+    return image
+    

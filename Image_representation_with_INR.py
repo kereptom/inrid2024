@@ -27,7 +27,7 @@ parser.add_argument('--resize_fact_list', nargs='+',  type=int, default=[1, 2, 4
 parser.add_argument('--lr_gauss', type=float, default=1e-4, help='Learning rate')
 parser.add_argument('--lr_relu', type=float, default=1e-4, help='Learning rate')
 parser.add_argument('--lr_siren', type=float, default=1e-4, help='Learning rate')
-parser.add_argument('--lr_wire', type=float, default=1e-4, help='Learning rate')
+parser.add_argument('--lr_wire', type=float, default=7e-4, help='Learning rate')
 parser.add_argument('--lr_ffn', type=float, default=1e-4, help='Learning rate')
 parser.add_argument('--lr_incode', type=float, default=1e-4, help='Learning rate')
 
@@ -102,7 +102,7 @@ for niters in args.niters_list:
                                                out_features=3,
                                                hidden_features=args.hidden_features,
                                                hidden_layers=args.hidden_layers,
-                                               first_omega_0=30, hidden_omega_0=10, sigma=10.0,
+                                               first_omega_0=30, hidden_omega_0=0, sigma=10.0,
                                                ).to(device)
                 elif inr_model == 'relu':
                     args.lr = args.lr_relu 
@@ -132,11 +132,7 @@ for niters in args.niters_list:
                 # For smaller images higher
                 args.lr = args.lr * resize_fact                            
 
-                if inr_model == 'wire':
-                    wire_lr = args.lr * min(1, args.maxpoints / (H * W))
-                    optim = torch.optim.Adam(lr=wire_lr, params=model.parameters())
-                else:
-                    optim = torch.optim.Adam(lr=args.lr, params=model.parameters())
+                optim = torch.optim.Adam(lr=args.lr, params=model.parameters())
                 scheduler = lr_scheduler.LambdaLR(optim, lambda x: args.scheduler_b ** min(x / niters, 1))  
                 
                 
