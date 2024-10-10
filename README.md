@@ -55,7 +55,7 @@ To run joint demosaicing and deblurring experiments:
 
 ### Results
 
-The scripts will output reconstructed images and performance metrics such as PSNR and SSIM. Results can be saved to the results/ directory or any specified output path.
+The scripts will output reconstructed images and performance metrics such as PSNR and SSIM. Results can be saved to the output/ directory or any specified output path.
 
 
 ## Experimental Details
